@@ -65,13 +65,18 @@ export class AudioRecorder {
 
 export class AudioPlayer {
   private audioContext: AudioContext | null = null;
+  private gainNode: GainNode | null = null;
   private nextPlayTime: number = 0;
   private playbackRate: number = 1.0;
+  private volume: number = 1.0;
 
   init() {
     if (!this.audioContext) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       this.audioContext = new AudioContextClass({ sampleRate: 24000 });
+      this.gainNode = this.audioContext.createGain();
+      this.gainNode.gain.value = this.volume;
+      this.gainNode.connect(this.audioContext.destination);
       this.nextPlayTime = this.audioContext.currentTime;
     }
   }
@@ -80,8 +85,15 @@ export class AudioPlayer {
     this.playbackRate = rate;
   }
 
+  setVolume(volume: number) {
+    this.volume = volume;
+    if (this.gainNode) {
+      this.gainNode.gain.value = volume;
+    }
+  }
+
   playBase64Pcm(base64: string) {
-    if (!this.audioContext) return;
+    if (!this.audioContext || !this.gainNode) return;
 
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
@@ -100,7 +112,7 @@ export class AudioPlayer {
     const source = this.audioContext.createBufferSource();
     source.buffer = audioBuffer;
     source.playbackRate.value = this.playbackRate;
-    source.connect(this.audioContext.destination);
+    source.connect(this.gainNode);
 
     const currentTime = this.audioContext.currentTime;
     if (this.nextPlayTime < currentTime) {
@@ -115,6 +127,7 @@ export class AudioPlayer {
     if (this.audioContext) {
       this.audioContext.close();
       this.audioContext = null;
+      this.gainNode = null;
     }
     this.nextPlayTime = 0;
   }
@@ -124,6 +137,9 @@ export class AudioPlayer {
         this.audioContext.close();
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         this.audioContext = new AudioContextClass({ sampleRate: 24000 });
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.gain.value = this.volume;
+        this.gainNode.connect(this.audioContext.destination);
         this.nextPlayTime = this.audioContext.currentTime;
     }
   }

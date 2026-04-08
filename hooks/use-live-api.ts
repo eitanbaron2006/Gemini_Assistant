@@ -7,6 +7,7 @@ export function useLiveAPI() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
+  const [volume, setVolume] = useState(1.0);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<{ text: string; isUser: boolean }[]>([]);
 
@@ -27,6 +28,13 @@ export function useLiveAPI() {
     setPlaybackRate(rate);
     if (playerRef.current) {
       playerRef.current.setPlaybackRate(rate);
+    }
+  }, []);
+
+  const updateVolume = useCallback((vol: number) => {
+    setVolume(vol);
+    if (playerRef.current) {
+      playerRef.current.setVolume(vol);
     }
   }, []);
 
@@ -69,6 +77,7 @@ export function useLiveAPI() {
       playerRef.current = new AudioPlayer();
       playerRef.current.init();
       playerRef.current.setPlaybackRate(playbackRate);
+      playerRef.current.setVolume(volume);
 
       recorderRef.current = new AudioRecorder((base64Data) => {
         if (isMutedRef.current) return;
@@ -111,7 +120,7 @@ export function useLiveAPI() {
           },
           onmessage: (message: LiveServerMessage) => {
             // Handle audio output
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            const base64Audio = message.serverContent?.modelTurn?.parts?.find(p => p.inlineData)?.inlineData?.data;
             if (base64Audio && playerRef.current) {
               playerRef.current.playBase64Pcm(base64Audio);
             }
@@ -122,9 +131,31 @@ export function useLiveAPI() {
             }
 
             // Handle transcription (model)
-            const modelTranscript = message.serverContent?.modelTurn?.parts?.[0]?.text;
-            if (modelTranscript) {
-              setTranscript(prev => [...prev, { text: modelTranscript, isUser: false }]);
+            const modelTurn = message.serverContent?.modelTurn;
+            const modelText = modelTurn?.parts?.map(p => p.text).filter(Boolean).join(" ") || (message as any).serverContent?.outputTranscription?.text;
+            if (modelText) {
+              setTranscript(prev => {
+                const last = prev[prev.length - 1];
+                // If the last message was also from model, append to it (streaming)
+                if (last && !last.isUser) {
+                  return [...prev.slice(0, -1), { ...last, text: last.text + " " + modelText }];
+                }
+                return [...prev, { text: modelText, isUser: false }];
+              });
+            }
+
+            // Handle transcription (user)
+            const userTurn = (message.serverContent as any)?.userTurn;
+            const userText = userTurn?.parts?.map((p: any) => p.text).filter(Boolean).join(" ") || (message as any).serverContent?.inputTranscription?.text;
+            if (userText) {
+              setTranscript(prev => {
+                const last = prev[prev.length - 1];
+                // If the last message was also from user, append to it (streaming/correction)
+                if (last && last.isUser) {
+                  return [...prev.slice(0, -1), { ...last, text: last.text + " " + userText }];
+                }
+                return [...prev, { text: userText, isUser: true }];
+              });
             }
           },
           onerror: (err: any) => {
@@ -146,18 +177,20 @@ export function useLiveAPI() {
       setIsConnecting(false);
       disconnect();
     }
-  }, [isConnected, isConnecting, disconnect, playbackRate]);
+  }, [isConnected, isConnecting, disconnect, playbackRate, volume]);
 
   return {
     isConnected,
     isConnecting,
     isMuted,
     playbackRate,
+    volume,
     error,
     transcript,
     connect,
     disconnect,
     toggleMute,
-    updatePlaybackRate
+    updatePlaybackRate,
+    updateVolume
   };
 }
