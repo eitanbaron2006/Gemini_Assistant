@@ -1,0 +1,14 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --color-bg: #0a0502;
+  --color-accent: #ff4e00;
+  --color-glass-surface: rgba(255, 80, 20, 0.15);
+  --color-glass-border: rgba(255, 200, 150, 0.1);
+}
+
+body {
+  background-color: var(--color-bg);
+  color: white;
+}
