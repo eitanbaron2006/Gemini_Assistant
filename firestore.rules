@@ -1,0 +1,78 @@
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// Collection: users
+// Document ID: {userId} (Firebase Auth UID)
+// Fields:
+//   - uid: string (required)
+//   - email: string (required, email format)
+//   - displayName: string
+//   - photoURL: string
+//   - createdAt: timestamp
+//
+// Collection: conversations
+// Document ID: {conversationId} (Auto-generated)
+// Fields:
+//   - userId: string (required, matches Auth UID)
+//   - title: string
+//   - transcript: list of maps {text: string, isUser: bool, timestamp: timestamp}
+//   - createdAt: timestamp
+//   - language: string (he/en)
+//
+// ===============================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid is string &&
+             data.email is string &&
+             data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidConversation(data) {
+      return data.keys().hasAll(['userId', 'transcript', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.transcript is list &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // User Profiles
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    // Conversations
+    match /conversations/{conversationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidConversation(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidConversation(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+  }
+}
